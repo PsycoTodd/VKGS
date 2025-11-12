@@ -2,6 +2,7 @@
 #include "glfw_initialization.h"
 #include "glfw_monitor.h"
 #include "glfw_window.h"
+#include "graphics.h"
 #include <GLFW/glfw3.h>
 
 
@@ -13,6 +14,8 @@ std::int32_t main(std::int32_t argc, gsl::zstring* argv)
   window.TryMoveToMonitor(0);
 
   glm::ivec2 window_size = window.GetWindowSize();
+
+  todd::Graphics graphics(&window);
 
   while (!window.ShouldClose()) {
     glfwPollEvents();

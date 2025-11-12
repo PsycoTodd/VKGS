@@ -1,11 +1,15 @@
 #include "glfw_window.h"
 #include "glfw_monitor.h"
 #include <GLFW/glfw3.h>
+#include <precomp.h>
 
 namespace todd {
 
-  Window::Window(const gsl::czstring& name, const glm::ivec2& size):_window(glfwCreateWindow(size.x, size.y, name, nullptr, nullptr), [](GLFWwindow* window) {glfwDestroyWindow(window);})
+  Window::Window(const gsl::czstring& name, const glm::ivec2& size)
   {
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    _window = std::shared_ptr<GLFWwindow>(glfwCreateWindow(size.x, size.y, name, nullptr, nullptr), [](GLFWwindow* window) {glfwDestroyWindow(window); });
     if (_window == nullptr) {
       std::exit(EXIT_FAILURE);
     }

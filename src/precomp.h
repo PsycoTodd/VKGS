@@ -5,5 +5,6 @@
 #include <cstdint>
 #include <cmath>
 #include <string>
-#include <string_view>
+#include <functional>
 #include <glm/glm.hpp>
+#include <utilities.h>
