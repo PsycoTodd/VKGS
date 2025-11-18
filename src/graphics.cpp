@@ -3,20 +3,53 @@
 #include <graphics.h>
 #include <GLFW/glfw3.h>
 #include <iostream>
+#include <spdlog/spdlog.h>
+
+#pragma region VK_FUNCTION_EXT_IMPL
+
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateDebugUtilsMessengerEXT(
+  VkInstance instance,
+  const VkDebugUtilsMessengerCreateInfoEXT* info,
+  const VkAllocationCallbacks* allocator,
+  VkDebugUtilsMessengerEXT* debug_messenger
+) {
+  PFN_vkCreateDebugUtilsMessengerEXT function =
+    reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT"));
+  if (function != nullptr) {
+    function(instance, info, allocator, debug_messenger);
+  }
+  else {
+    return VK_ERROR_EXTENSION_NOT_PRESENT;
+  }
+}
+
+VKAPI_ATTR void VKAPI_CALL vkDestroyDebugUtilsMessengerEXT(
+  VkInstance instance,
+  VkDebugUtilsMessengerEXT debug_messenger,
+  const VkAllocationCallbacks* allocator
+) {
+  PFN_vkDestroyDebugUtilsMessengerEXT function =
+    reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT"));
+  if (function != nullptr) {
+    function(instance, debug_messenger, allocator);
+  }
+}
+
+#pragma endregion
 
 namespace todd {
-
+#pragma region VALIDATION_LAYERS
   static VKAPI_ATTR VkBool32 VKAPI_CALL ValidationCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT severity,
     VkDebugUtilsMessageTypeFlagsEXT type,
     const VkDebugUtilsMessengerCallbackDataEXT* callback_data,
     void* user_data)
   {
-    if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-      std::cerr << "Validation Error: " << callback_data->pMessage << std::endl;
+    if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+      spdlog::warn("Vulkan Validation: {}", callback_data->pMessage);
     }
     else {
-      std::cout << "Validation Message: " << callback_data->pMessage << std::endl;
+      spdlog::error("Vulkan Error: {}", callback_data->pMessage);
     }
     return VK_FALSE;
   }
@@ -24,15 +57,29 @@ namespace todd {
   static VkDebugUtilsMessengerCreateInfoEXT GetCreateMessagerInfo() {
     VkDebugUtilsMessengerCreateInfoEXT creation_info = {};
     creation_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    creation_info.pNext = nullptr;
     creation_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                                    VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT |
-                                    VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
+                                    VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
     creation_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT;
 
     creation_info.pfnUserCallback = ValidationCallback;
     creation_info.pUserData = nullptr;
     return creation_info;
   }
+
+  void Graphics::SetupDebugMessenger() {
+    if (!_validation_enabled) {
+      return;
+    }
+    VkDebugUtilsMessengerCreateInfoEXT info = GetCreateMessagerInfo();
+    VkResult result = vkCreateDebugUtilsMessengerEXT(_instance, &info, nullptr, &_debug_messenger);
+    if (result != VK_SUCCESS) {
+      spdlog::error("Cannot create debug messenger.");
+      return;
+    }
+  }
+
+#pragma endregion
 
   Graphics::Graphics(gsl::not_null<Window*> window):_window(window)
   {
@@ -45,6 +92,9 @@ namespace todd {
   Graphics::~Graphics()
   {
     if (_instance) {
+      if (_debug_messenger) {
+        vkDestroyDebugUtilsMessengerEXT(_instance, _debug_messenger, nullptr);
+      }
       vkDestroyInstance(_instance, nullptr);
     }
   }
@@ -52,6 +102,7 @@ namespace todd {
   void Graphics::InitializeVulkan()
   {
     CreateInstance();
+    SetupDebugMessenger();
   }
 
   gsl::span<gsl::czstring> Graphics::GetSuggestedInstanceExtensions() {
@@ -104,7 +155,7 @@ namespace todd {
     if (!AreAllExtensionsSupported(required_extensions)) {
       std::exit(EXIT_FAILURE);
     }
-
+    return required_extensions;
   }
 
   bool LayerMatchesName(const gsl::czstring& name, const VkLayerProperties& property) {
@@ -140,17 +191,11 @@ namespace todd {
 
   void Graphics::CreateInstance()
   {
-    std::array<gsl::czstring, 2> validation_layers = { "VK_LAYER_KHRONOS_validation", "VK_EXT_debug_utils"};
+    std::array<gsl::czstring, 1> validation_layers = {"VK_LAYER_KHRONOS_validation"};
     if (!AreAllLayersSupported(validation_layers)) {
       _validation_enabled = false;
     }
-
-
-    gsl::span<gsl::czstring> suggested_extensions = GetSuggestedInstanceExtensions();
-
-    if (!AreAllExtensionsSupported(suggested_extensions)) {
-      std::exit(EXIT_FAILURE);
-    }
+    std::vector<gsl::czstring> required_extensions = GetRequiredInstanceExtensions();
 
     VkApplicationInfo app_info = {};
     app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -165,8 +210,8 @@ namespace todd {
     instance_creation_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     instance_creation_info.pNext = nullptr;
     instance_creation_info.pApplicationInfo = &app_info;
-    instance_creation_info.enabledExtensionCount = suggested_extensions.size();
-    instance_creation_info.ppEnabledExtensionNames = suggested_extensions.data();
+    instance_creation_info.enabledExtensionCount = required_extensions.size();
+    instance_creation_info.ppEnabledExtensionNames = required_extensions.data();
 
     VkDebugUtilsMessengerCreateInfoEXT messager_creation_info = GetCreateMessagerInfo();
     if (_validation_enabled) {

@@ -14,6 +14,7 @@ public:
 private:
   void InitializeVulkan();
   void CreateInstance();
+  void SetupDebugMessenger();
   std::vector<gsl::czstring> GetRequiredInstanceExtensions();
 
   static gsl::span<gsl::czstring> GetSuggestedInstanceExtensions();
@@ -21,8 +22,10 @@ private:
   static std::vector<VkLayerProperties> GetSupportedValidationLayers();
   static bool AreAllExtensionsSupported(gsl::span<gsl::czstring> extensions);
   static bool AreAllLayersSupported(gsl::span<gsl::czstring> extensions);
+
 private:
   VkInstance _instance = nullptr;
+  VkDebugUtilsMessengerEXT _debug_messenger;
   gsl::not_null<Window*> _window;
   bool _validation_enabled = false;
 

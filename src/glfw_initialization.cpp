@@ -1,11 +1,16 @@
 #include "glfw_initialization.h"
 #include <GLFW/glfw3.h>
-#include <cstdlib>
 #include <precomp.h>
+#include <spdlog/spdlog.h>
 
 namespace todd {
 
+  void glfw_error_callback(std::int32_t error_code, gsl::czstring message) {
+    spdlog::error("Glfw Validation: {}", message);
+  }
+
   GlfwInitialization::GlfwInitialization() {
+    glfwSetErrorCallback(glfw_error_callback);
     if (glfwInit() != GLFW_TRUE) {
       std::exit(EXIT_FAILURE);
     }
