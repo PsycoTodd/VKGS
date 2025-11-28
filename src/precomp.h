@@ -8,3 +8,5 @@
 #include <functional>
 #include <glm/glm.hpp>
 #include <utilities.h>
+#include <optional>
+#include <set>

@@ -91,7 +91,14 @@ namespace todd {
   }
   Graphics::~Graphics()
   {
+    if (_logical_deivce != nullptr) {
+      vkDestroyDevice(_logical_deivce, nullptr);
+    }
+
     if (_instance) {
+      if (_surface != VK_NULL_HANDLE) {
+        vkDestroySurfaceKHR(_instance, _surface, nullptr);
+      }
       if (_debug_messenger) {
         vkDestroyDebugUtilsMessengerEXT(_instance, _debug_messenger, nullptr);
       }
@@ -103,6 +110,9 @@ namespace todd {
   {
     CreateInstance();
     SetupDebugMessenger();
+    CreateSurface();
+    PickPhysicalDevice();
+    CreateLogicalDeviceAndQueues();
   }
 
   gsl::span<gsl::czstring> Graphics::GetSuggestedInstanceExtensions() {
@@ -229,4 +239,113 @@ namespace todd {
       std::exit(EXIT_FAILURE);
     }
   }
+
+#pragma region DEVCIES_AND_QUEUES
+
+  bool Graphics::IsDeviceSuitable(VkPhysicalDevice device) {
+
+    QueueFamilyIndices families = FindQueueFamilies(device);
+    return families.IsValid();
+  }
+
+  void Graphics::PickPhysicalDevice() {
+    std::vector<VkPhysicalDevice> devices = GetAvailableDevices();
+
+    std::erase_if(devices, std::not_fn(std::bind_front(&Graphics::IsDeviceSuitable, this)));
+    if (devices.empty()) {
+      spdlog::error("No physical devices that match the criteria.");
+      std::exit(EXIT_FAILURE);
+    }
+
+
+    
+    _physical_device = devices[0];
+  }
+
+  std::vector<VkPhysicalDevice> Graphics::GetAvailableDevices() {
+    std::uint32_t device_count;
+    vkEnumeratePhysicalDevices(_instance, &device_count, nullptr);
+    if (!device_count) {
+      return {};
+    }
+    std::vector<VkPhysicalDevice> devices(device_count);
+    vkEnumeratePhysicalDevices(_instance, &device_count, devices.data());
+    return devices;
+  }
+
+  Graphics::QueueFamilyIndices Graphics::FindQueueFamilies(VkPhysicalDevice device) {
+    std::uint32_t queue_family_count = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, nullptr);
+    std::vector<VkQueueFamilyProperties> families(queue_family_count);
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, families.data());
+
+    auto graphics_family_it = std::find_if(families.begin(), families.end(), [](const VkQueueFamilyProperties& props) {
+      return props.queueFlags & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_TRANSFER_BIT);
+    });
+
+    QueueFamilyIndices result;
+    result.graphics_family = graphics_family_it - families.begin();
+
+    for (std::uint32_t i = 0; i < families.size(); ++i) {
+      VkBool32 has_presentation_support = false;
+      vkGetPhysicalDeviceSurfaceSupportKHR(device, i, _surface, &has_presentation_support);
+      if (has_presentation_support) {
+        result.presentation_family = i;
+        break;
+      }
+    }
+
+    return result;
+  }
+
+  void Graphics::CreateLogicalDeviceAndQueues() {
+    QueueFamilyIndices picked_device_families = FindQueueFamilies(_physical_device);
+    if (!picked_device_families.IsValid()) {
+      std::exit(EXIT_FAILURE);
+    }
+
+    std::set<std::uint32_t> unique_queue_faimilies = {
+      picked_device_families.graphics_family.value(),
+    picked_device_families.presentation_family.value()};
+
+    std::float_t queue_priority = 1.0f;
+
+    std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
+    for (std::uint32_t unique_queue_family : unique_queue_faimilies) {
+      VkDeviceQueueCreateInfo queue_info = {};
+      queue_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+      queue_info.queueFamilyIndex = unique_queue_family;
+      queue_info.queueCount = 1;
+      queue_info.pQueuePriorities = &queue_priority;
+      queue_create_infos.push_back(std::move(queue_info));
+    }
+
+    VkPhysicalDeviceFeatures required_features = {};
+    VkDeviceCreateInfo device_info = {};
+    device_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    device_info.queueCreateInfoCount = queue_create_infos.size();
+    device_info.pQueueCreateInfos = queue_create_infos.data();
+    device_info.pEnabledFeatures = &required_features;
+    device_info.enabledExtensionCount = 0;
+    device_info.enabledLayerCount = 0; // deprecated
+
+    VkResult res = vkCreateDevice(_physical_device, &device_info, nullptr, &_logical_deivce);
+    if (res != VK_SUCCESS) {
+      std::exit(EXIT_FAILURE);
+    }
+    vkGetDeviceQueue(_logical_deivce, picked_device_families.graphics_family.value(), 0, &_graphics_queue);
+    vkGetDeviceQueue(_logical_deivce, picked_device_families.presentation_family.value(), 0, &_present_queue);
+  }
+
+#pragma endregion
+
+#pragma region PRESENTATION
+  void Graphics::CreateSurface() {
+    VkResult result = glfwCreateWindowSurface(_instance, _window->GetHandler().get(), nullptr, &_surface);
+    if (result != VK_SUCCESS) {
+      std::exit(EXIT_FAILURE);
+    }
+  }
+#pragma endregion
+
 }
